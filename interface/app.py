@@ -2,6 +2,7 @@ import streamlit as st
 import plotly.express as px
 from google.cloud import bigquery
 from st_files_connection import FilesConnection
+import pandas as pd
 
 # --- Constants & Configuration ---
 # Must be the first Streamlit command
@@ -23,6 +24,8 @@ BUCKETS = {
     'q3': 'og-gdelt-main-data-dev/analysis_results/q3'
 }
 
+GREEN = '#00CC96'
+RED = '#EF553B'
 
 # --- Data Loading Functions ---
 @st.cache_data
@@ -43,6 +46,34 @@ def load_gcs_data(path: str):
     """Fetches CSV data from GCS and caches it."""
     gcs_connection = st.connection('gcs', type=FilesConnection)
     return gcs_connection.read(path, input_format="csv")
+
+def get_q1_figure(dataframe):
+    q1_df = dataframe.copy()
+    q1_df["correlation_type"] = ["Positive" if r > 0 else "Negative" for r in q1_df["tone_vs_close_r"]]
+    fig_q1 = px.bar(
+        q1_df,
+        x="company",  # Replace with your actual column name if different
+        y="tone_vs_close_r",
+        color="correlation_type",
+        color_discrete_map={"Positive": GREEN, "Negative": RED},
+        title="Tone vs Next-Day Close",
+        labels={"tone_vs_close_r": "Pearson r", "company": ""}
+    )
+
+    fig_q1.add_hline(y=0, line_width=1, line_color="black")
+
+    for index, row in q1_df.iterrows():
+        if row.get("tone_vs_close_significant") == "Yes":
+            fig_q1.add_annotation(
+                x=row["company"],
+                y=row["tone_vs_close_r"] + (0.05 if row["tone_vs_close_r"] > 0 else -0.05),
+                # Offset direction
+                text="<b>*</b>",
+                showarrow=False,
+                font=dict(size=18)
+            )
+
+    return fig_q1
 
 
 # --- Main Streamlit App ---
@@ -75,8 +106,34 @@ def main():
         st.header("Q1: Tone vs. Stock Performance")
         q1_df = load_gcs_data(f"{BUCKETS['q1']}/q1_tone_correlation_results.csv")
 
-        col1, col2 = st.columns([1, 1.5])
-        with col1:
+        col1, col2 = st.columns([1, 1])
+
+        with st.container():
+
+            with col1:
+                st.write("Tone vs Close")
+                colors_close = ["green" if r > 0 else "red" for r in results_df["tone_vs_close_r"]]
+                bars1 = axes[0].bar(x, results_df["tone_vs_close_r"], width, color=colors_close, alpha=0.7,
+                                    edgecolor="black")
+                axes[0].set_ylabel("Pearson r", fontsize=11)
+                axes[0].set_title("Tone vs Next-Day Close", fontsize=13)
+                axes[0].set_xticks(x)
+                axes[0].set_xticklabels(companies, fontsize=10)
+                axes[0].axhline(y=0, color="black", linewidth=0.5)
+                axes[0].set_ylim(-0.5, 0.5)
+                # Add significance stars
+                for i, row in results_df.iterrows():
+                    if row["tone_vs_close_significant"] == "Yes":
+                        axes[0].text(i, row["tone_vs_close_r"] + 0.02, "*", ha="center", fontsize=14, fontweight="bold")
+
+                st.plotly_chart()
+
+            with col2:
+                st.write("Tone vs Daily Return")
+                st.plotly_chart(get_q1_figure(q1_df), use_container_width=True)
+
+        with st.container():
+            st.header("Tone Impact Data")
             st.dataframe(
                 q1_df,
                 column_config={
@@ -87,16 +144,6 @@ def main():
                 hide_index=True,
                 use_container_width=True
             )
-        with col2:
-            fig_q1 = px.bar(
-                q1_df,
-                x='company',
-                y='tone_vs_close_r',
-                color='tone_vs_close_significant',
-                color_discrete_map={"Yes": "#00CC96", "No": "#EF553B"},
-                title="Tone Correlation with Close Price (Pearson r)"
-            )
-            st.plotly_chart(fig_q1, use_container_width=True)
 
     # --- Q2: Top Themes ---
     with tab2:
