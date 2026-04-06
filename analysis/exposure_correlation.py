@@ -8,7 +8,10 @@ Data: combined_data_clean from GCS bucket og-gdelt-main-data-dev
 """
  
 import pandas as pd
+import numpy as np
 from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 import os
  
 # ============================================================
@@ -87,7 +90,7 @@ def run_lagged_correlations(df):
  
         for lag in lags:
             # Calculate the return over the next N days
-            # pct_change(lag) looks BACKWARD, so we shift FORWARD to get future return
+            # We shift FORWARD to get future return (not backward)
             company_df[f"future_return_{lag}d"] = (
                 company_df["Close"].shift(-lag) - company_df["Close"]
             ) / company_df["Close"] * 100
@@ -163,6 +166,175 @@ def print_lagged_results(lagged_df):
  
  
 # ============================================================
+# VISUALIZATIONS
+# ============================================================
+ 
+def plot_correlation_bars(results_df):
+    """
+    Bar chart comparing r-values across companies for both metrics.
+    Same layout as Q1 tone script for consistency.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+ 
+    companies = results_df["company"]
+    x = np.arange(len(companies))
+    width = 0.5
+ 
+    # Exposure vs Next-Day Close
+    colors_close = ["green" if r > 0 else "red" for r in results_df["exposure_vs_close_r"]]
+    axes[0].bar(x, results_df["exposure_vs_close_r"], width, color=colors_close, alpha=0.7, edgecolor="black")
+    axes[0].set_ylabel("Pearson r", fontsize=11)
+    axes[0].set_title("Exposure vs Next-Day Close", fontsize=13)
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(companies, fontsize=10)
+    axes[0].axhline(y=0, color="black", linewidth=0.5)
+    axes[0].set_ylim(-0.5, 0.5)
+    for i, row in results_df.iterrows():
+        if row["exposure_vs_close_significant"] == "Yes":
+            axes[0].text(i, row["exposure_vs_close_r"] + 0.02, "*", ha="center", fontsize=14, fontweight="bold")
+ 
+    # Exposure vs Daily Return
+    colors_ret = ["green" if r > 0 else "red" for r in results_df["exposure_vs_return_r"]]
+    axes[1].bar(x, results_df["exposure_vs_return_r"], width, color=colors_ret, alpha=0.7, edgecolor="black")
+    axes[1].set_ylabel("Pearson r", fontsize=11)
+    axes[1].set_title("Exposure vs Daily Return %", fontsize=13)
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(companies, fontsize=10)
+    axes[1].axhline(y=0, color="black", linewidth=0.5)
+    axes[1].set_ylim(-0.5, 0.5)
+    for i, row in results_df.iterrows():
+        if row["exposure_vs_return_significant"] == "Yes":
+            axes[1].text(i, row["exposure_vs_return_r"] + 0.02, "*", ha="center", fontsize=14, fontweight="bold")
+ 
+    fig.suptitle("Q3: Exposure Correlation — Pearson r by Company (* = p < 0.05)", fontsize=14, y=1.02)
+    plt.tight_layout()
+    path = os.path.join(OUTPUT_DIR, "q3_exposure_correlation_bars.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {path}")
+ 
+ 
+def plot_scatter_per_company(df):
+    """
+    Scatter plots: exposure count vs daily return per company.
+    Shows the raw data behind the correlation numbers.
+    """
+    companies = sorted(df["company"].unique())
+    fig, axes = plt.subplots(1, len(companies), figsize=(6 * len(companies), 5))
+ 
+    if len(companies) == 1:
+        axes = [axes]
+ 
+    for ax, company in zip(axes, companies):
+        company_df = df[df["company"] == company]
+        r, p = pearsonr(company_df["daily_exposure_count"], company_df["daily_return_pct"])
+ 
+        ax.scatter(
+            company_df["daily_exposure_count"],
+            company_df["daily_return_pct"],
+            alpha=0.2, s=10, color="#1f77b4"
+        )
+        ax.axhline(y=0, color="gray", linewidth=0.5, linestyle="--")
+        ax.set_xlabel("Daily Exposure Count", fontsize=11)
+        ax.set_ylabel("Daily Return %", fontsize=11)
+        ax.set_title(f"{company}\nr={r:.4f}, p={p:.4f}", fontsize=12)
+ 
+    fig.suptitle("Q3: Exposure vs Daily Return — Per Company", fontsize=14, y=1.02)
+    plt.tight_layout()
+    path = os.path.join(OUTPUT_DIR, "q3_exposure_vs_return_scatter.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {path}")
+ 
+ 
+def plot_lagged_heatmap(lagged_df):
+    """
+    Heatmap showing r-values across companies and lag periods.
+    Rows = companies, columns = lag days, color = correlation strength.
+    Quick visual to see if any lag stands out.
+    """
+    pivot = lagged_df.pivot(index="company", columns="lag_days", values="r_value")
+ 
+    fig, ax = plt.subplots(figsize=(8, 4))
+    im = ax.imshow(pivot.values, cmap="RdYlGn", aspect="auto", vmin=-0.15, vmax=0.15)
+ 
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels([f"{d}-day" for d in pivot.columns], fontsize=11)
+    ax.set_yticks(range(len(pivot.index)))
+    ax.set_yticklabels(pivot.index, fontsize=11)
+    ax.set_xlabel("Lag Period", fontsize=12)
+    ax.set_title("Q3: Time-Lagged Exposure → Future Returns (Pearson r)", fontsize=13)
+ 
+    # Add r-values as text on each cell
+    for i in range(len(pivot.index)):
+        for j in range(len(pivot.columns)):
+            val = pivot.values[i, j]
+            # Find if this cell is significant
+            match = lagged_df[
+                (lagged_df["company"] == pivot.index[i]) &
+                (lagged_df["lag_days"] == pivot.columns[j])
+            ]
+            sig = match["significant"].values[0] if len(match) > 0 else "No"
+            label = f"{val:.3f}{'*' if sig == 'Yes' else ''}"
+            ax.text(j, i, label, ha="center", va="center", fontsize=10, fontweight="bold")
+ 
+    plt.colorbar(im, ax=ax, label="Pearson r")
+    plt.tight_layout()
+    path = os.path.join(OUTPUT_DIR, "q3_lagged_correlation_heatmap.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {path}")
+ 
+ 
+def plot_time_series(df):
+    """
+    Time series: exposure count + stock price overlaid per company (dual y-axes).
+    Shows whether spikes in coverage coincide with price movements.
+    """
+    companies = sorted(df["company"].unique())
+    fig, axes = plt.subplots(len(companies), 1, figsize=(14, 5 * len(companies)))
+ 
+    if len(companies) == 1:
+        axes = [axes]
+ 
+    for ax, company in zip(axes, companies):
+        company_df = df[df["company"] == company].sort_values("event_date")
+        company_df = company_df.set_index("event_date")
+        weekly = company_df.resample("W").agg({
+            "daily_exposure_count": "mean",
+            "Close": "mean"
+        }).dropna()
+ 
+        # Left y-axis: stock price
+        color_price = "#1f77b4"
+        ax.plot(weekly.index, weekly["Close"], color=color_price, linewidth=1.5, label="Close Price")
+        ax.set_ylabel("Close Price ($)", color=color_price, fontsize=11)
+        ax.tick_params(axis="y", labelcolor=color_price)
+ 
+        # Right y-axis: exposure count
+        ax2 = ax.twinx()
+        color_exp = "#2ca02c"
+        ax2.bar(weekly.index, weekly["daily_exposure_count"], width=5, color=color_exp, alpha=0.3, label="Avg Exposure")
+        ax2.set_ylabel("Daily Exposure Count", color=color_exp, fontsize=11)
+        ax2.tick_params(axis="y", labelcolor=color_exp)
+ 
+        ax.set_title(f"{company} — Weekly Avg Exposure vs Close Price (2020–2025)", fontsize=13)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+        ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
+        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
+ 
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, loc="upper left", fontsize=9)
+ 
+    plt.tight_layout()
+    path = os.path.join(OUTPUT_DIR, "q3_exposure_vs_price_timeseries.png")
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"Saved: {path}")
+ 
+ 
+# ============================================================
 # MAIN
 # ============================================================
  
@@ -191,8 +363,26 @@ def main():
     lagged_df.to_csv(lagged_path, index=False)
     print(f"Lagged results saved to: {lagged_path}")
  
-    print("\nDone! Check results/ folder for CSV outputs.")
+    # Generate visualizations
+    print("\nGenerating visualizations...")
+    plot_correlation_bars(results_df)
+    plot_scatter_per_company(df)
+    plot_lagged_heatmap(lagged_df)
+    plot_time_series(df)
+ 
+    print("\nDone! Check results/ folder for CSV and PNG outputs.")
  
  
 if __name__ == "__main__":
     main()
+ 
+
+
+
+
+
+
+
+
+
+
