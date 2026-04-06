@@ -3,3 +3,5 @@ db-dtypes==1.5.1
 pandas==2.3.3
 st-files-connection==0.1.0
 streamlit==1.56.0
+plotly
+gcsfs
