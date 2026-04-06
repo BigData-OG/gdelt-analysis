@@ -1,5 +1,6 @@
 import streamlit as st
 import plotly.express as px
+import matplotlib.pyplot as plt
 from google.cloud import bigquery
 from st_files_connection import FilesConnection
 import pandas as pd
@@ -27,6 +28,7 @@ BUCKETS = {
 GREEN = '#00CC96'
 RED = '#EF553B'
 
+
 # --- Data Loading Functions ---
 @st.cache_data
 def load_company_data(company_name: str):
@@ -47,12 +49,14 @@ def load_gcs_data(path: str):
     gcs_connection = st.connection('gcs', type=FilesConnection)
     return gcs_connection.read(path, input_format="csv")
 
-def get_q1_figure(dataframe):
-    q1_df = dataframe.copy()
-    q1_df["correlation_type"] = ["Positive" if r > 0 else "Negative" for r in q1_df["tone_vs_close_r"]]
-    fig_q1 = px.bar(
-        q1_df,
-        x="company",  # Replace with your actual column name if different
+
+def create_tone_vs_close_chart(dataframe):
+    df = dataframe.copy()
+    df["correlation_type"] = ["Positive" if r > 0 else "Negative" for r in df["tone_vs_close_r"]]
+
+    fig = px.bar(
+        df,
+        x="company",
         y="tone_vs_close_r",
         color="correlation_type",
         color_discrete_map={"Positive": GREEN, "Negative": RED},
@@ -60,20 +64,52 @@ def get_q1_figure(dataframe):
         labels={"tone_vs_close_r": "Pearson r", "company": ""}
     )
 
-    fig_q1.add_hline(y=0, line_width=1, line_color="black")
+    fig.add_hline(y=0, line_width=1, line_color="black")
+    fig.update_yaxes(range=[-0.5, 0.5])
 
-    for index, row in q1_df.iterrows():
+    for index, row in df.iterrows():
         if row.get("tone_vs_close_significant") == "Yes":
-            fig_q1.add_annotation(
+            offset = 0.05 if row["tone_vs_close_r"] >= 0 else -0.05
+            fig.add_annotation(
                 x=row["company"],
-                y=row["tone_vs_close_r"] + (0.05 if row["tone_vs_close_r"] > 0 else -0.05),
-                # Offset direction
+                y=row["tone_vs_close_r"] + offset,
                 text="<b>*</b>",
                 showarrow=False,
                 font=dict(size=18)
             )
 
-    return fig_q1
+    return fig
+
+
+def create_tone_vs_return_chart(dataframe):
+    df = dataframe.copy()
+    df["correlation_type"] = ["Positive" if r > 0 else "Negative" for r in df["tone_vs_return_r"]]
+
+    fig = px.bar(
+        df,
+        x="company",
+        y="tone_vs_return_r",
+        color="correlation_type",
+        color_discrete_map={"Positive": GREEN, "Negative": RED},
+        title="Tone vs Daily Return %",
+        labels={"tone_vs_return_r": "Pearson r", "company": ""}
+    )
+
+    fig.add_hline(y=0, line_width=1, line_color="black")
+    fig.update_yaxes(range=[-0.5, 0.5])
+
+    for index, row in df.iterrows():
+        if row.get("tone_vs_return_significant") == "Yes":
+            offset = 0.05 if row["tone_vs_return_r"] >= 0 else -0.05
+            fig.add_annotation(
+                x=row["company"],
+                y=row["tone_vs_return_r"] + offset,
+                text="<b>*</b>",
+                showarrow=False,
+                font=dict(size=18)
+            )
+
+    return fig
 
 
 # --- Main Streamlit App ---
@@ -109,28 +145,13 @@ def main():
         col1, col2 = st.columns([1, 1])
 
         with st.container():
-
             with col1:
                 st.write("Tone vs Close")
-                colors_close = ["green" if r > 0 else "red" for r in results_df["tone_vs_close_r"]]
-                bars1 = axes[0].bar(x, results_df["tone_vs_close_r"], width, color=colors_close, alpha=0.7,
-                                    edgecolor="black")
-                axes[0].set_ylabel("Pearson r", fontsize=11)
-                axes[0].set_title("Tone vs Next-Day Close", fontsize=13)
-                axes[0].set_xticks(x)
-                axes[0].set_xticklabels(companies, fontsize=10)
-                axes[0].axhline(y=0, color="black", linewidth=0.5)
-                axes[0].set_ylim(-0.5, 0.5)
-                # Add significance stars
-                for i, row in results_df.iterrows():
-                    if row["tone_vs_close_significant"] == "Yes":
-                        axes[0].text(i, row["tone_vs_close_r"] + 0.02, "*", ha="center", fontsize=14, fontweight="bold")
-
-                st.plotly_chart()
+                st.plotly_chart(create_tone_vs_return_chart(q1_df), use_container_width=True)
 
             with col2:
                 st.write("Tone vs Daily Return")
-                st.plotly_chart(get_q1_figure(q1_df), use_container_width=True)
+                st.plotly_chart(create_tone_vs_close_chart(q1_df), use_container_width=True)
 
         with st.container():
             st.header("Tone Impact Data")
