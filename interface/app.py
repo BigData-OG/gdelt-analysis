@@ -4,6 +4,9 @@ from google.cloud import bigquery
 from st_files_connection import FilesConnection
 import pandas as pd
 
+import config
+
+cfg_map = config.load()
 # --- Constants & Configuration ---
 # Must be the first Streamlit command
 st.set_page_config(
@@ -19,10 +22,9 @@ COMPANIES = {
 }
 
 BUCKETS = {
-    'q1': 'og-gdelt-main-data-dev/analysis_results/q1',
-    'q2': 'og-gdelt-main-data-dev/analysis_results/q2',
-    'q3': 'og-gdelt-main-data-dev/analysis_results/q3',
-    'monthly': 'og-gdelt-main-data-dev/cleaned_data/monthly'
+    'q1': f'${cfg_map.get("GCP_BUCKET")}/analysis_results/q1',
+    'q2': f'${cfg_map.get("GCP_BUCKET")}/analysis_results/q2',
+    'q3': f'${cfg_map.get("GCP_BUCKET")}/analysis_results/q3'
 }
 
 GREEN = '#00CC96'
@@ -33,7 +35,7 @@ RED = '#EF553B'
 @st.cache_data
 def load_company_data(company_name: str):
     """Loads a preview of combined clean data for a given company."""
-    client = bigquery.Client()
+    client = bigquery.Client(project=cfg_map.get("GCP_PROJECT_ID"))
     query = f"""
             SELECT *
             FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.combined_data_clean` db
