@@ -233,30 +233,21 @@ def plot_scatter_per_company(df):
     print(f"Saved: {path}")
  
  
-# ============================================================
-# MAIN
-# ============================================================
- 
 def main():
     print("=" * 70)
     print("BD733 — Q1: Tone Impact Analysis")
     print("=" * 70)
  
-    # Load data
     df = load_data(DATA_PATH)
  
-    # Run correlations + hypothesis tests
     results_df = run_tone_correlations(df)
  
-    # Print results
     print_results(results_df)
  
-    # Save results to CSV (for use in Streamlit or report)
     results_path = os.path.join(OUTPUT_DIR, "q1_tone_correlation_results.csv")
     results_df.to_csv(results_path, index=False)
     print(f"\nResults saved to: {results_path}")
  
-    # Generate visualizations
     print("\nGenerating visualizations...")
     plot_time_series(df)
     plot_correlation_bars(results_df)
