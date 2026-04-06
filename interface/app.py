@@ -1,6 +1,5 @@
 import streamlit as st
 import plotly.express as px
-import matplotlib.pyplot as plt
 from google.cloud import bigquery
 from st_files_connection import FilesConnection
 import pandas as pd
@@ -50,6 +49,7 @@ def load_gcs_data(path: str):
     return gcs_connection.read(path, input_format="csv")
 
 
+# --- Chart Generation Functions ---
 def create_tone_vs_close_chart(dataframe):
     df = dataframe.copy()
     df["correlation_type"] = ["Positive" if r > 0 else "Negative" for r in df["tone_vs_close_r"]]
@@ -77,7 +77,6 @@ def create_tone_vs_close_chart(dataframe):
                 showarrow=False,
                 font=dict(size=18)
             )
-
     return fig
 
 
@@ -108,7 +107,33 @@ def create_tone_vs_return_chart(dataframe):
                 showarrow=False,
                 font=dict(size=18)
             )
+    return fig
 
+
+def create_top_themes_chart(dataframe, title):
+    df = dataframe.copy()
+    top_10 = df.sort_values('theme_vs_close_r', ascending=False).head(10)
+    fig = px.bar(
+        top_10,
+        x='theme_vs_close_r',
+        y='theme_category',
+        orientation='h',
+        title=title
+    )
+    fig.update_layout(yaxis={'categoryorder': 'total ascending'})
+    return fig
+
+
+def create_exposure_chart(dataframe):
+    df = dataframe.copy()
+    fig = px.bar(
+        df,
+        x='company',
+        y='exposure_vs_close_r',
+        color='exposure_vs_close_significant',
+        color_discrete_map={"Yes": GREEN, "No": RED},
+        title="Media Exposure Correlation with Close Price"
+    )
     return fig
 
 
@@ -167,7 +192,6 @@ def main():
     # --- Q2: Top Themes ---
     with tab2:
         st.header("Q2: Top Media Themes Driving Performance")
-        # Sub-tabs for each company to prevent visual clutter
         sub_tab_amzn, sub_tab_aramco, sub_tab_pfe = st.tabs(["Amazon", "Aramco", "Pfizer"])
 
         with sub_tab_amzn:
@@ -176,20 +200,17 @@ def main():
 
         with sub_tab_aramco:
             aramco_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_aramco.csv")
-            col_a, col_b = st.columns([1, 1])
-            with col_a:
-                st.dataframe(aramco_df, hide_index=True, use_container_width=True)
-            with col_b:
-                top_10_aramco = aramco_df.sort_values('theme_vs_close_r', ascending=False).head(10)
-                fig_aramco = px.bar(
-                    top_10_aramco,
-                    x='theme_vs_close_r',
-                    y='theme_category',
-                    orientation='h',
-                    title="Aramco: Top 10 Themes by Close Price Correlation"
+
+            # Graph on top, inside a column
+            col1, _ = st.columns([1, 1])
+            with col1:
+                st.plotly_chart(
+                    create_top_themes_chart(aramco_df, "Aramco: Top 10 Themes by Close Price Correlation"),
+                    use_container_width=True
                 )
-                fig_aramco.update_layout(yaxis={'categoryorder': 'total ascending'})
-                st.plotly_chart(fig_aramco, use_container_width=True)
+
+            # Table on bottom
+            st.dataframe(aramco_df, hide_index=True, use_container_width=True)
 
         with sub_tab_pfe:
             pfe_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_pfizer.csv")
@@ -200,27 +221,21 @@ def main():
         st.header("Q3: Exposure Correlation")
         q3_df = load_gcs_data(f"{BUCKETS['q3']}/q3_exposure_correlation_results.csv")
 
-        col1, col2 = st.columns([1, 1.5])
+        # Graph on top, inside a column
+        col1, _ = st.columns([1, 1])
         with col1:
-            st.dataframe(
-                q3_df,
-                column_config={
-                    "exposure_vs_close_r": st.column_config.NumberColumn("Exposure R", format="%.3f"),
-                    "exposure_vs_close_significant": st.column_config.TextColumn("Significant?")
-                },
-                hide_index=True,
-                use_container_width=True
-            )
-        with col2:
-            fig_q3 = px.bar(
-                q3_df,
-                x='company',
-                y='exposure_vs_close_r',
-                color='exposure_vs_close_significant',
-                color_discrete_map={"Yes": "#00CC96", "No": "#EF553B"},
-                title="Media Exposure Correlation with Close Price"
-            )
-            st.plotly_chart(fig_q3, use_container_width=True)
+            st.plotly_chart(create_exposure_chart(q3_df), use_container_width=True)
+
+        # Table on bottom
+        st.dataframe(
+            q3_df,
+            column_config={
+                "exposure_vs_close_r": st.column_config.NumberColumn("Exposure R", format="%.3f"),
+                "exposure_vs_close_significant": st.column_config.TextColumn("Significant?")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
 
 
 if __name__ == "__main__":
