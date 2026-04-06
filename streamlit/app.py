@@ -1,6 +1,8 @@
 import streamlit as st
 from google.cloud import bigquery
+from st_files_connection import FilesConnection
 
+# --- Constants & Configuration ---
 COMPANIES = {
     'AMZN': 'Amazon',
     '2222.SR': 'Aramco',
@@ -13,8 +15,10 @@ BUCKETS = {
     'q3': 'og-gdelt-main-data-dev/analysis_results/q3'
 }
 
+# --- Data Loading Functions ---
 @st.cache_data
-def load_data(company_name: str):
+def load_company_data(company_name: str):
+    """Loads a preview of combined clean data for a given company."""
     client = bigquery.Client()
 
     query = f"""
@@ -25,35 +29,50 @@ def load_data(company_name: str):
             """
     return client.query(query).to_dataframe()
 
+# --- Main Streamlit App ---
+def main():
+    # 1. Clean Data Preview Section
+    st.title("GDELT Clean Data Preview")
 
-st.title("GDELT Data Clean Data Preview")
+    selected_company = st.selectbox(
+        "Select a company",
+        options=list(COMPANIES.values()),
+        index=None,
+        placeholder="Select a company to visualize",
+    )
 
-company_selected = st.selectbox(
-    "Select a company",
-    options=list(COMPANIES.values()),
-    index=None,
-    placeholder="Select a company to visualize",
-)
+    if selected_company:
+        with st.spinner(f"Loading data for {selected_company}..."):
+            company_data_df = load_company_data(selected_company)
+            st.dataframe(company_data_df)
 
-if company_selected:
-    # Optional: Adds a nice loading spinner while BigQuery fetches the data
-    with st.spinner(f"Loading data for {company_selected}..."):
-        df = load_data(company_selected)
-        st.dataframe(df)
+    # 2. GCP Storage Results Section
+    gcs_connection = st.connection('gcs', type=FilesConnection)
 
+    # Question 1 Results
+    st.title("Q1: Tone Correlation")
+    q1_tone_correlation_df = gcs_connection.read(f"{BUCKETS['q1']}/q1_tone_correlation_results.csv", input_format="csv")
+    st.dataframe(q1_tone_correlation_df)
 
-# connection with GCP storage
-from st_files_connection import FilesConnection
+    # Question 2 Results
+    st.title("Q2: Top Themes")
+    
+    st.subheader("Amazon")
+    q2_amazon_themes_df = gcs_connection.read(f"{BUCKETS['q2']}/q2_top_themes_amazon.csv", input_format="csv")
+    st.dataframe(q2_amazon_themes_df)
+    
+    st.subheader("Aramco")
+    q2_aramco_themes_df = gcs_connection.read(f"{BUCKETS['q2']}/q2_top_themes_aramco.csv", input_format="csv")
+    st.dataframe(q2_aramco_themes_df)
+    
+    st.subheader("Pfizer")
+    q2_pfizer_themes_df = gcs_connection.read(f"{BUCKETS['q2']}/q2_top_themes_pfizer.csv", input_format="csv")
+    st.dataframe(q2_pfizer_themes_df)
 
+    # Question 3 Results
+    st.title("Q3: Exposure Correlation")
+    q3_exposure_correlation_df = gcs_connection.read(f"{BUCKETS['q3']}/q3_exposure_correlation_results.csv", input_format="csv")
+    st.dataframe(q3_exposure_correlation_df)
 
-conn = st.connection('gcs', type=FilesConnection)
-
-st.title("Q1")
-df2 = conn.read(f"{BUCKETS['q1']}/q1_tone_correlation_results.csv", input_format="csv", ttl=600)
-
-st.title("Q2")
-df3 = conn.read(f"{BUCKETS['q2']}/q2_top_themes_amazon.csv", input_format="csv", ttl=600)
-st.title("Q3")
-df4 = conn.read(f"{BUCKETS['q3']}/q3_exposure_correlation_results.csv", input_format="csv", ttl=600)
-
-
+if __name__ == "__main__":
+    main()
