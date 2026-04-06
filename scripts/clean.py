@@ -20,7 +20,7 @@ def export_partitioned_by_month(client, table_name, base_uri, file_prefix):
         # Export each month to separate file
         export_query = f"""
         EXPORT DATA OPTIONS(
-          uri='{base_uri}/{file_prefix}_{year_month}.csv',
+          uri='{base_uri}/{file_prefix}_{year_month}_*.csv',
           format='CSV',
           overwrite=true,
           header=true
