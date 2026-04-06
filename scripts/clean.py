@@ -1,4 +1,41 @@
 from google.cloud import bigquery
+
+def export_partitioned_by_month(client, table_name, base_uri, file_prefix):
+    """
+    Export data partitioned by month (year-month format).
+    """
+    # Get distinct year-months from the data
+    year_months_query = f"""
+    SELECT DISTINCT FORMAT_DATE('%Y-%m', event_date) as year_month
+    FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.{table_name}`
+    ORDER BY year_month
+    """
+    
+    year_months = client.query(year_months_query).result()
+    
+    exported_count = 0
+    for row in year_months:
+        year_month = row.year_month
+        
+        # Export each month to separate file
+        export_query = f"""
+        EXPORT DATA OPTIONS(
+          uri='{base_uri}/{file_prefix}_{year_month}.csv',
+          format='CSV',
+          overwrite=true,
+          header=true
+        ) AS
+        SELECT * 
+        FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.{table_name}`
+        WHERE FORMAT_DATE('%Y-%m', event_date) = '{year_month}'
+        ORDER BY ticker, event_date
+        """
+        
+        client.query(export_query).result()
+        exported_count += 1
+    
+    print(f"  Total: {exported_count} monthly files exported")
+    return exported_count
  
 def main():
     client = bigquery.Client(project='gdelt-stock-sentiment-analysis')
@@ -126,61 +163,21 @@ def main():
     client.query(clean_themes_query).result()
     
     # Export cleaned data
-    export_clean_tone = """
-    EXPORT DATA OPTIONS(
-      uri='gs://og-gdelt-main-data-dev/cleaned_data/combined_data_clean_*.csv',
-      format='CSV',
-      overwrite=true,
-      header=true
-    ) AS
-    SELECT * FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.combined_data_clean`
-    """
-    client.query(export_clean_tone).result()
-
-    export_clean_themes = """
-    EXPORT DATA OPTIONS(
-        uri='gs://og-gdelt-main-data-dev/cleaned_data/themes_with_prices_clean_*.csv',
-        format='CSV',
-        overwrite=true,
-        header=true
-    ) AS
-    SELECT * FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.themes_with_prices_clean`
-    """
-    client.query(export_clean_themes).result()
-    
-    #Summary for tone
-    summary_query = """
-    SELECT 
-        'combined_data_clean' as table_name,
-        COUNT(*) as total_rows,
-        COUNTIF(next_day_close IS NULL) as missing_next_day_close,
-        ROUND(AVG(daily_avg_tone), 2) as avg_tone,
-        ROUND(STDDEV(daily_avg_tone), 2) as stddev_tone
-    FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.combined_data_clean`
-    """
-    
-    result = client.query(summary_query).result()
-    for row in result:
-        print(f"Table: {row.table_name}")
-        print(f"  Total rows: {row.total_rows}")
-        print(f"  Missing next_day_close: {row.missing_next_day_close}")
-        print(f"  Avg tone: {row.avg_tone}")
-        print(f"  Stddev tone: {row.stddev_tone}")
-
-    #Summary for Themes
-    themes_summary_query = """
-    SELECT 
-        'themes_with_prices_clean' as table_name,
-        COUNT(*) as total_rows,
-        COUNTIF(next_day_close IS NULL) as missing_next_day_close
-    FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.themes_with_prices_clean`
-    """
+    export_partitioned_by_month(
+        client=client,
+        table_name='combined_data_clean',
+        base_uri='gs://og-gdelt-main-data-dev/cleaned_data/monthly',
+        file_prefix='combined_data_clean'
+    )
  
-    result = client.query(themes_summary_query).result()
-    for row in result:
-        print(f"\nTable: {row.table_name}")
-        print(f"  Total rows: {row.total_rows}")
-        print(f"  Missing next_day_close: {row.missing_next_day_close}")
+    export_partitioned_by_month(
+        client=client,
+        table_name='themes_with_prices_clean',
+        base_uri='gs://og-gdelt-main-data-dev/cleaned_data/monthly',
+        file_prefix='themes_with_prices_clean'
+    )
+    
+    
  
 if __name__ == '__main__':
     main()

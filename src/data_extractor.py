@@ -4,6 +4,8 @@ import yfinance as yf
 import pandas as pd
 import logging
 from pathlib import Path
+from .entity_resolver import EntityResolver
+ 
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ class DataExtractor:
         self.gcs_client = storage.Client(project=project_id)
         self.bucket_name = bucket
         self.sql_dir = Path(__file__).parent.parent / 'sql'
+        self.entity_resolver = EntityResolver()
     
     # Larry can call this
     def extract_company_data(self, company_name: str, ticker: str, years: int = 5) -> dict:
@@ -172,7 +175,11 @@ class DataExtractor:
         with open(template_path, 'r') as f:
             template = f.read()
         print("IT WORKSSSSSSSSS")
-        company_regex=f"{company_name.lower()}|{ticker.lower()}"
+        if self.entity_resolver:
+            company_regex = self.entity_resolver.get_regex_pattern(company_name, ticker)
+            logger.info(f"Using spacy entity resolution for {company_name} with regex: {company_regex}")
+        else:
+            company_regex=f"{company_name.lower()}|{ticker.lower()}"
 
         # Fill in parameters
         query = template.format(
@@ -253,15 +260,6 @@ class DataExtractor:
     def _process_data(self, ticker: str, paths: dict) -> int:
         """
         Join tone data with stock prices and create training dataset.
-        
-        Steps:
-        1. Load tone and stock data to BigQuery temp tables
-        2. Join on event_date = Date
-        3. Forward-fill missing stock prices
-        4. Calculate next_day_close (target variable)
-        5. Calculate daily_return_pct (feature)
-        6. Add day_of_week (feature)
-        7. Export to GCS
         """
         
         # Create temp dataset
