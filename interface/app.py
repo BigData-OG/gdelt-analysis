@@ -22,9 +22,9 @@ COMPANIES = {
 }
 
 BUCKETS = {
-    'q1': f'${cfg_map.get("GCP_BUCKET")}/analysis_results/q1',
-    'q2': f'${cfg_map.get("GCP_BUCKET")}/analysis_results/q2',
-    'q3': f'${cfg_map.get("GCP_BUCKET")}/analysis_results/q3'
+    'q1': f'{cfg_map.get("GCP_BUCKET")}/analysis_results/q1',
+    'q2': f'{cfg_map.get("GCP_BUCKET")}/analysis_results/q2',
+    'q3': f'{cfg_map.get("GCP_BUCKET")}/analysis_results/q3'
 }
 
 GREEN = '#00CC96'
