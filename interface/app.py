@@ -146,11 +146,9 @@ def main():
 
         with st.container():
             with col1:
-                st.write("Tone vs Close")
                 st.plotly_chart(create_tone_vs_return_chart(q1_df), use_container_width=True)
 
             with col2:
-                st.write("Tone vs Daily Return")
                 st.plotly_chart(create_tone_vs_close_chart(q1_df), use_container_width=True)
 
         with st.container():
