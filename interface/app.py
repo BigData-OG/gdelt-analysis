@@ -24,10 +24,12 @@ COMPANIES = {
     'PFE': 'Pfizer'
 }
 
+BUCKET_NAME = cfg_map.get("GCP_BUCKET")
+
 BUCKETS = {
-    'q1': f'{cfg_map.get("GCP_BUCKET")}/analysis_results/q1',
-    'q2': f'{cfg_map.get("GCP_BUCKET")}/analysis_results/q2',
-    'q3': f'{cfg_map.get("GCP_BUCKET")}/analysis_results/q3'
+    'q1': f'{BUCKET_NAME}/analysis_results/q1',
+    'q2': f'{BUCKET_NAME}/analysis_results/q2',
+    'q3': f'{BUCKET_NAME}/analysis_results/q3'
 }
 
 GREEN = '#00CC96'
@@ -84,6 +86,7 @@ def create_tone_vs_close_chart(dataframe):
             )
     return fig
 
+
 def create_tone_vs_close_timeseries(dataframe):
     # Sort by date to ensure the line chart flows correctly left to right
     df = dataframe.sort_values('event_date')
@@ -94,9 +97,9 @@ def create_tone_vs_close_timeseries(dataframe):
     # Add Tone Trace (Primary Y-Axis)
     fig.add_trace(
         go.Scatter(
-            x=df['event_date'], 
-            y=df['daily_avg_tone'], 
-            name="Daily Avg Tone", 
+            x=df['event_date'],
+            y=df['daily_avg_tone'],
+            name="Daily Avg Tone",
             mode='lines',
             line=dict(color=GREEN)
         ),
@@ -106,11 +109,11 @@ def create_tone_vs_close_timeseries(dataframe):
     # Add Close Price Trace (Secondary Y-Axis)
     fig.add_trace(
         go.Scatter(
-            x=df['event_date'], 
-            y=df['Close'], 
-            name="Close Price", 
+            x=df['event_date'],
+            y=df['Close'],
+            name="Close Price",
             mode='lines',
-            line=dict(color='#1f77b4') # Standard Plotly Blue
+            line=dict(color='#1f77b4')  # Standard Plotly Blue
         ),
         secondary_y=True,
     )
@@ -118,7 +121,7 @@ def create_tone_vs_close_timeseries(dataframe):
     # Clean up layout
     fig.update_layout(
         title=f"Tone vs. Close Price",
-        hovermode="x unified", # Shows both values in a single tooltip on hover
+        hovermode="x unified",  # Shows both values in a single tooltip on hover
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
     )
 
@@ -247,6 +250,58 @@ def create_comparative_themes_chart(top_themes_dict):
     return fig
 
 
+from scipy.stats import pearsonr
+
+
+def create_exposure_scatter_chart(dataframe):
+    df = dataframe.copy()
+
+    # 1. Calculate Pearson r and p for each company to embed in the facet titles
+    facet_labels = {}
+    for company in df["company"].unique():
+        comp_df = df[df["company"] == company].dropna(subset=["daily_exposure_count", "daily_return_pct"])
+
+        if len(comp_df) > 1:
+            r, p = pearsonr(comp_df["daily_exposure_count"], comp_df["daily_return_pct"])
+            # Use <br> for HTML line breaks in Plotly titles
+            facet_labels[company] = f"{company}<br>r={r:.4f}, p={p:.4f}"
+        else:
+            facet_labels[company] = f"{company}<br>Insufficient Data"
+
+    # 2. Map the generated titles to a new column
+    df["facet_title"] = df["company"].map(facet_labels)
+
+    # 3. Generate the faceted scatter plot
+    fig = px.scatter(
+        df,
+        x="daily_exposure_count",
+        y="daily_return_pct",
+        facet_col="facet_title",
+        color_discrete_sequence=["#1f77b4"],
+        opacity=0.2,
+        title="Q3: Exposure vs Daily Return — Per Company",
+        labels={
+            "daily_exposure_count": "Daily Exposure Count",
+            "daily_return_pct": "Daily Return %"
+        }
+    )
+
+    # 4. Replicate Matplotlib sizing and lines
+    fig.update_traces(marker=dict(size=5))  # Equivalent to s=10 in Matplotlib
+    fig.add_hline(y=0, line_dash="dash", line_color="gray", line_width=1)
+
+    # 5. Clean up layout
+    # Remove the default "facet_title=" prefix from the subplot headers
+    fig.for_each_annotation(lambda a: a.update(text=a.text.replace("facet_title=", "")))
+
+    # Your original Matplotlib subplots did not share axes.
+    # Unlink them here to maintain that exact behavior.
+    fig.update_yaxes(matches=None, showticklabels=True)
+    fig.update_xaxes(matches=None, showticklabels=True)
+
+    return fig
+
+
 # --- Main Streamlit App ---
 def main():
     company_data_df = pd.DataFrame()  # Initialize an empty DataFrame for company data
@@ -257,11 +312,11 @@ def main():
     with st.sidebar:
         st.header("🗃️ Raw Data Preview")
         st.markdown("Preview the cleaned BigQuery dataset.")
-        
+
         # --- NEW: Date Picker ---
         today = datetime.date.today()
-        default_start = today - datetime.timedelta(days=30) # Default to last 30 days
-        
+        default_start = today - datetime.timedelta(days=180)  # Default to last 30 days
+
         date_range = st.date_input(
             "Select Date Range",
             value=(default_start, today),
@@ -280,11 +335,11 @@ def main():
         if selected_company:
             if len(date_range) == 2:
                 start_date, end_date = date_range
-                
+
                 # Format dates as strings for the BigQuery SQL query
                 start_str = start_date.strftime('%Y-%m-%d')
                 end_str = end_date.strftime('%Y-%m-%d')
-                
+
                 with st.spinner(f"Querying BQ for {selected_company} ({start_str} to {end_str})..."):
                     # Pass the dynamic dates to the cached function
                     company_data_df = load_company_data(selected_company, start_str, end_str)
@@ -293,9 +348,9 @@ def main():
             else:
                 st.warning("Please select a complete date range (Start and End date).")
     if selected_company and not company_data_df.empty:
-            st.subheader(f"📈 {selected_company} Over Time")
-            st.plotly_chart(create_tone_vs_close_timeseries(company_data_df), use_container_width=True)
-            st.divider()
+        st.subheader(f"📈 {selected_company} Over Time")
+        st.plotly_chart(create_tone_vs_close_timeseries(company_data_df), use_container_width=True)
+        st.divider()
     # 2. Main Content Tabs for Results
     tab1, tab2, tab3 = st.tabs(["Tone Correlation (Q1)", "Top Themes (Q2)", "Exposure Correlation (Q3)"])
 
@@ -341,6 +396,7 @@ def main():
         }
 
         st.plotly_chart(create_comparative_themes_chart(top_themes_dict), use_container_width=True)
+
         st.divider()
         sub_tab_amzn, sub_tab_aramco, sub_tab_pfe = st.tabs(["Amazon", "Aramco", "Pfizer"])
 
@@ -348,12 +404,6 @@ def main():
             st.dataframe(amzn_df, hide_index=True, use_container_width=True)
 
         with sub_tab_aramco:
-            col1, _ = st.columns([1, 1])
-            with col1:
-                st.plotly_chart(
-                    create_top_themes_chart(aramco_df, "Aramco: Top 10 Themes by Close Price Correlation"),
-                    use_container_width=True
-                )
             st.dataframe(aramco_df, hide_index=True, use_container_width=True)
 
         with sub_tab_pfe:
@@ -363,6 +413,23 @@ def main():
     with tab3:
         st.header("Q3: Exposure Correlation")
         q3_df = load_gcs_data(f"{BUCKETS['q3']}/q3_exposure_correlation_results.csv")
+
+        q3_start_date = "2019-12-31"
+        q3_end_date = datetime.date.today().strftime('%Y-%m-%d')
+
+        q3_tab_amzn, q3_tab_aramco, q3_tab_pfe = st.tabs(["Amazon", "Aramco", "Pfizer"])
+
+        with q3_tab_amzn:
+            st.plotly_chart(create_exposure_scatter_chart(load_company_data("Amazon", q3_start_date, q3_end_date)),
+                            use_container_width=True)
+
+        with q3_tab_aramco:
+            st.plotly_chart(create_exposure_scatter_chart(load_company_data("Aramco", q3_start_date, q3_end_date)),
+                            use_container_width=True)
+
+        with q3_tab_pfe:
+            st.plotly_chart(create_exposure_scatter_chart(load_company_data("Pfizer", q3_start_date, q3_end_date)),
+                            use_container_width=True)
 
         col1, _ = st.columns([1, 1])
         with col1:
