@@ -24,7 +24,8 @@ COMPANIES = {
     'PFE': 'Pfizer'
 }
 
-BUCKET_NAME = cfg_map.get("GCP_BUCKET")
+# BUCKET_NAME = cfg_map.get("GCP_BUCKET")
+BUCKET_NAME = 'og-gdelt-main-data-dev'
 
 BUCKETS = {
     'q1': f'{BUCKET_NAME}/analysis_results/q1',
@@ -279,7 +280,6 @@ def create_exposure_scatter_chart(dataframe):
         facet_col="facet_title",
         color_discrete_sequence=["#1f77b4"],
         opacity=0.2,
-        title="Q3: Exposure vs Daily Return — Per Company",
         labels={
             "daily_exposure_count": "Daily Exposure Count",
             "daily_return_pct": "Daily Return %"
@@ -302,6 +302,37 @@ def create_exposure_scatter_chart(dataframe):
     return fig
 
 
+def create_exposure_vs_return_chart(dataframe):
+    df = dataframe.copy()
+    df["correlation_type"] = ["Positive" if r > 0 else "Negative" for r in df["exposure_vs_return_r"]]
+
+    fig = px.bar(
+        df,
+        x="company",
+        y="exposure_vs_return_r",
+        color="correlation_type",
+        color_discrete_map={"Positive": GREEN, "Negative": RED},  # Using your existing GREEN/RED constants
+        title="Q3: Exposure Correlation — Pearson r by Company (* = p < 0.05)",
+        labels={"exposure_vs_return_r": "Pearson r", "company": ""}
+    )
+
+    fig.add_hline(y=0, line_width=1, line_color="black")
+    fig.update_yaxes(range=[-0.5, 0.5])
+
+    for index, row in df.iterrows():
+        if row.get("exposure_vs_return_significant") == "Yes":
+            offset = 0.05 if row["exposure_vs_return_r"] >= 0 else -0.05
+            fig.add_annotation(
+                x=row["company"],
+                y=row["exposure_vs_return_r"] + offset,
+                text="<b>*</b>",
+                showarrow=False,
+                font=dict(size=18)
+            )
+
+    return fig
+
+
 # --- Main Streamlit App ---
 def main():
     company_data_df = pd.DataFrame()  # Initialize an empty DataFrame for company data
@@ -313,7 +344,6 @@ def main():
         st.header("🗃️ Raw Data Preview")
         st.markdown("Preview the cleaned BigQuery dataset.")
 
-        # --- NEW: Date Picker ---
         today = datetime.date.today()
         default_start = today - datetime.timedelta(days=180)  # Default to last 30 days
 
@@ -330,7 +360,6 @@ def main():
             placeholder="Select to load data...",
         )
 
-        # --- UPDATED: Fetch logic ---
         # Ensure a company is selected AND a complete date range is provided
         if selected_company:
             if len(date_range) == 2:
@@ -351,7 +380,6 @@ def main():
         st.subheader(f"📈 {selected_company} Over Time")
         st.plotly_chart(create_tone_vs_close_timeseries(company_data_df), use_container_width=True)
         st.divider()
-    # 2. Main Content Tabs for Results
     tab1, tab2, tab3 = st.tabs(["Tone Correlation (Q1)", "Top Themes (Q2)", "Exposure Correlation (Q3)"])
 
     # --- Q1: Tone Correlation ---
@@ -431,9 +459,12 @@ def main():
             st.plotly_chart(create_exposure_scatter_chart(load_company_data("Pfizer", q3_start_date, q3_end_date)),
                             use_container_width=True)
 
-        col1, _ = st.columns([1, 1])
+        col1, col2 = st.columns([1, 1])
         with col1:
             st.plotly_chart(create_exposure_chart(q3_df), use_container_width=True)
+
+        with col2:
+            st.plotly_chart(create_exposure_vs_return_chart(q3_df), use_container_width=True)
 
         st.dataframe(
             q3_df,
