@@ -24,8 +24,7 @@ COMPANIES = {
     'PFE': 'Pfizer'
 }
 
-# BUCKET_NAME = cfg_map.get("GCP_BUCKET")
-BUCKET_NAME = 'og-gdelt-main-data-dev'
+BUCKET_NAME = cfg_map.get("GCP_BUCKET")
 
 BUCKETS = {
     'q1': f'{BUCKET_NAME}/analysis_results/q1',
