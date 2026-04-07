@@ -21,7 +21,8 @@ COMPANIES = {
 BUCKETS = {
     'q1': 'og-gdelt-main-data-dev/analysis_results/q1',
     'q2': 'og-gdelt-main-data-dev/analysis_results/q2',
-    'q3': 'og-gdelt-main-data-dev/analysis_results/q3'
+    'q3': 'og-gdelt-main-data-dev/analysis_results/q3',
+    'monthly': 'og-gdelt-main-data-dev/cleaned_data/monthly'
 }
 
 GREEN = '#00CC96'
@@ -137,6 +138,67 @@ def create_exposure_chart(dataframe):
     return fig
 
 
+def create_comparative_themes_chart(top_themes_dict):
+    # 1. Combine the dictionary into a single DataFrame
+    combined_df = pd.DataFrame()
+    for company, df in top_themes_dict.items():
+        temp_df = df.copy()
+        temp_df['company'] = company
+        # Sort values so they display correctly in the horizontal bar chart
+        temp_df = temp_df.sort_values("theme_vs_return_r", ascending=True)
+        combined_df = pd.concat([combined_df, temp_df], ignore_index=True)
+
+    # 2. Add columns for correlation color and significance markers
+    combined_df["correlation_type"] = [
+        "Positive" if r > 0 else "Negative" for r in combined_df["theme_vs_return_r"]
+    ]
+    combined_df["significance_star"] = [
+        "*" if sig == "Yes" else "" for sig in combined_df["theme_vs_return_significant"]
+    ]
+
+    # 3. Generate the faceted Plotly Express chart
+    fig = px.bar(
+        combined_df,
+        x="theme_vs_return_r",
+        y="theme_category",
+        color="correlation_type",
+        facet_col="company",  # Creates the side-by-side subplots
+        facet_col_spacing=0.1,
+        text="significance_star",  # Adds the * automatically
+        color_discrete_map={"Positive": GREEN, "Negative": RED},
+        orientation='h',
+        title="Q2: Top Themes by Correlation with Daily Return (* = p < 0.05)",
+        labels={"theme_vs_return_r": "Pearson r", "theme_category": "", "company": "Company"}
+    )
+
+    # 4. Clean up the layout to match your Matplotlib styling
+    # Place text outside the bars
+    # fig.update_traces(textposition='outside', textfont_size=16)
+
+    # Un-link the Y-axes so each company shows its own specific themes
+    fig.update_yaxes(matches=None, showticklabels=True)
+
+    # Clean up facet titles (removes the default "company=" prefix)
+    fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
+
+    # Add the vertical zero line across all facets
+    fig.add_vline(x=0, line_width=1, line_color="black")
+
+    fig.update_layout(
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.2,  # Pushes the legend below the x-axis
+            xanchor="center",
+            x=0.5
+        )
+    )
+
+    fig.update_layout(legend_title_text="")
+
+    return fig
+
+
 # --- Main Streamlit App ---
 def main():
     st.title("📊 GDELT Stock Sentiment Analysis")
@@ -192,15 +254,25 @@ def main():
     # --- Q2: Top Themes ---
     with tab2:
         st.header("Q2: Top Media Themes Driving Performance")
+
+        amzn_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_amazon.csv")
+        aramco_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_aramco.csv")
+        pfe_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_pfizer.csv")
+
+        top_themes_dict = {
+            "Amazon": amzn_df.head(10),
+            "Aramco": aramco_df.head(10),
+            "Pfizer": pfe_df.head(10)
+        }
+
+        st.plotly_chart(create_comparative_themes_chart(top_themes_dict), use_container_width=True)
+        st.divider()
         sub_tab_amzn, sub_tab_aramco, sub_tab_pfe = st.tabs(["Amazon", "Aramco", "Pfizer"])
 
         with sub_tab_amzn:
-            amzn_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_amazon.csv")
             st.dataframe(amzn_df, hide_index=True, use_container_width=True)
 
         with sub_tab_aramco:
-            aramco_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_aramco.csv")
-
             # Graph on top, inside a column
             col1, _ = st.columns([1, 1])
             with col1:
@@ -213,7 +285,6 @@ def main():
             st.dataframe(aramco_df, hide_index=True, use_container_width=True)
 
         with sub_tab_pfe:
-            pfe_df = load_gcs_data(f"{BUCKETS['q2']}/q2_top_themes_pfizer.csv")
             st.dataframe(pfe_df, hide_index=True, use_container_width=True)
 
     # --- Q3: Exposure Correlation ---
