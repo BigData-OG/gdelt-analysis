@@ -1,8 +1,11 @@
+import datetime
 import streamlit as st
 import plotly.express as px
 from google.cloud import bigquery
 from st_files_connection import FilesConnection
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 import config
 
@@ -33,14 +36,13 @@ RED = '#EF553B'
 
 # --- Data Loading Functions ---
 @st.cache_data
-def load_company_data(company_name: str):
+def load_company_data(company_name: str, fromDate, toDate):
     """Loads a preview of combined clean data for a given company."""
     client = bigquery.Client(project=cfg_map.get("GCP_PROJECT_ID"))
     query = f"""
             SELECT *
-            FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.combined_data_clean` db
-            WHERE db.company = '{company_name}' 
-            LIMIT 100
+            FROM `gdelt-stock-sentiment-analysis.gdelt_analysis.combined_data_partitioned` db
+            WHERE db.company = '{company_name}' AND db.event_date >= '{fromDate}' AND db.event_date <= '{toDate}'
             """
     return client.query(query).to_dataframe()
 
@@ -80,6 +82,50 @@ def create_tone_vs_close_chart(dataframe):
                 showarrow=False,
                 font=dict(size=18)
             )
+    return fig
+
+def create_tone_vs_close_timeseries(dataframe):
+    # Sort by date to ensure the line chart flows correctly left to right
+    df = dataframe.sort_values('event_date')
+
+    # Create figure with secondary y-axis
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+
+    # Add Tone Trace (Primary Y-Axis)
+    fig.add_trace(
+        go.Scatter(
+            x=df['event_date'], 
+            y=df['daily_avg_tone'], 
+            name="Daily Avg Tone", 
+            mode='lines',
+            line=dict(color=GREEN)
+        ),
+        secondary_y=False,
+    )
+
+    # Add Close Price Trace (Secondary Y-Axis)
+    fig.add_trace(
+        go.Scatter(
+            x=df['event_date'], 
+            y=df['Close'], 
+            name="Close Price", 
+            mode='lines',
+            line=dict(color='#1f77b4') # Standard Plotly Blue
+        ),
+        secondary_y=True,
+    )
+
+    # Clean up layout
+    fig.update_layout(
+        title=f"Tone vs. Close Price",
+        hovermode="x unified", # Shows both values in a single tooltip on hover
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+
+    # Set y-axes titles
+    fig.update_yaxes(title_text="Daily Avg Tone", secondary_y=False)
+    fig.update_yaxes(title_text="Close Price", secondary_y=True)
+
     return fig
 
 
@@ -203,6 +249,7 @@ def create_comparative_themes_chart(top_themes_dict):
 
 # --- Main Streamlit App ---
 def main():
+    company_data_df = pd.DataFrame()  # Initialize an empty DataFrame for company data
     st.title("📊 GDELT Stock Sentiment Analysis")
     st.markdown("Analyze the correlations between global media tone, exposure, themes, and stock performance.")
 
@@ -210,6 +257,17 @@ def main():
     with st.sidebar:
         st.header("🗃️ Raw Data Preview")
         st.markdown("Preview the cleaned BigQuery dataset.")
+        
+        # --- NEW: Date Picker ---
+        today = datetime.date.today()
+        default_start = today - datetime.timedelta(days=30) # Default to last 30 days
+        
+        date_range = st.date_input(
+            "Select Date Range",
+            value=(default_start, today),
+            max_value=today
+        )
+
         selected_company = st.selectbox(
             "Select a company",
             options=list(COMPANIES.values()),
@@ -217,12 +275,27 @@ def main():
             placeholder="Select to load data...",
         )
 
+        # --- UPDATED: Fetch logic ---
+        # Ensure a company is selected AND a complete date range is provided
         if selected_company:
-            with st.spinner(f"Querying BQ for {selected_company}..."):
-                company_data_df = load_company_data(selected_company)
-                st.metric("Rows Retrieved", len(company_data_df))
-                st.dataframe(company_data_df, use_container_width=True)
-
+            if len(date_range) == 2:
+                start_date, end_date = date_range
+                
+                # Format dates as strings for the BigQuery SQL query
+                start_str = start_date.strftime('%Y-%m-%d')
+                end_str = end_date.strftime('%Y-%m-%d')
+                
+                with st.spinner(f"Querying BQ for {selected_company} ({start_str} to {end_str})..."):
+                    # Pass the dynamic dates to the cached function
+                    company_data_df = load_company_data(selected_company, start_str, end_str)
+                    st.metric("Rows Retrieved", len(company_data_df))
+                    st.dataframe(company_data_df[:100], use_container_width=True)
+            else:
+                st.warning("Please select a complete date range (Start and End date).")
+    if selected_company and not company_data_df.empty:
+            st.subheader(f"📈 {selected_company} Over Time")
+            st.plotly_chart(create_tone_vs_close_timeseries(company_data_df), use_container_width=True)
+            st.divider()
     # 2. Main Content Tabs for Results
     tab1, tab2, tab3 = st.tabs(["Tone Correlation (Q1)", "Top Themes (Q2)", "Exposure Correlation (Q3)"])
 
@@ -275,15 +348,12 @@ def main():
             st.dataframe(amzn_df, hide_index=True, use_container_width=True)
 
         with sub_tab_aramco:
-            # Graph on top, inside a column
             col1, _ = st.columns([1, 1])
             with col1:
                 st.plotly_chart(
                     create_top_themes_chart(aramco_df, "Aramco: Top 10 Themes by Close Price Correlation"),
                     use_container_width=True
                 )
-
-            # Table on bottom
             st.dataframe(aramco_df, hide_index=True, use_container_width=True)
 
         with sub_tab_pfe:
@@ -294,12 +364,10 @@ def main():
         st.header("Q3: Exposure Correlation")
         q3_df = load_gcs_data(f"{BUCKETS['q3']}/q3_exposure_correlation_results.csv")
 
-        # Graph on top, inside a column
         col1, _ = st.columns([1, 1])
         with col1:
             st.plotly_chart(create_exposure_chart(q3_df), use_container_width=True)
 
-        # Table on bottom
         st.dataframe(
             q3_df,
             column_config={
