@@ -250,7 +250,6 @@ def create_comparative_themes_chart(top_themes_dict):
     return fig
 
 
-from scipy.stats import pearsonr
 
 
 def create_exposure_scatter_chart(dataframe):
@@ -262,9 +261,7 @@ def create_exposure_scatter_chart(dataframe):
         comp_df = df[df["company"] == company].dropna(subset=["daily_exposure_count", "daily_return_pct"])
 
         if len(comp_df) > 1:
-            r, p = pearsonr(comp_df["daily_exposure_count"], comp_df["daily_return_pct"])
-            # Use <br> for HTML line breaks in Plotly titles
-            facet_labels[company] = f"{company}<br>r={r:.4f}, p={p:.4f}"
+            facet_labels[company] = f"{company}"
         else:
             facet_labels[company] = f"{company}<br>Insufficient Data"
 
