@@ -1,6 +1,6 @@
 # Sentiment & Stock: Analyzing GDELT News Sentiment's Correlation with Stock Price Movements
 
-**BD733 — Big Data Lab 2 | Simon Fraser University | April 2026**
+**CMPT 733 — Big Data Lab 2 | Simon Fraser University | April 2026**
 
 **Team OG:** Dhruv Saikia, Kevin A. Gonzalez Casto, Ryan Peng, Sirathee Koomgreng
 
