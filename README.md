@@ -21,7 +21,7 @@ This project investigates whether news sentiment from the [GDELT Project](https:
 - News sentiment shows **no statistically significant correlation with daily stock returns** for any company (p > 0.05 for all).
 - Apparent correlations with price *levels* are attributable to shared long-term trends (confounding variable), not predictive power.
 - Only 5.9% of (company, theme) pairs showed significant correlation with daily returns — essentially noise.
-- These findings align with the Efficient Market Hypothesis and were independently corroborated by a parallel ML pipeline (CMPT 756) where a naive baseline outperformed a sentiment-augmented RandomForest model.
+- These findings align with the Efficient Market Hypothesis and were independently corroborated by a parallel ML pipeline where a naive baseline outperformed a sentiment-augmented RandomForest model.
 
 ---
 
@@ -100,4 +100,4 @@ Run all cells sequentially. The notebook will:
 
 ## License
 
-This project was developed for academic purposes as part of BD733 at Simon Fraser University.
+This project was developed for academic purposes as part of CMPT 733 course at Simon Fraser University.
