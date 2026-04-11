@@ -6,7 +6,7 @@
 
 ---
 
-## Overview
+## Overviewg
 
 This project investigates whether news sentiment from the [GDELT Project](https://www.gdeltproject.org/) (Global Database of Events, Language, and Tone) correlates with stock price movements. We analyze three companies across distinct sectors — **Amazon** (AMZN), **Pfizer** (PFE), and **Saudi Aramco** (2222.SR) — over the period **2020–2025**, using Pearson correlation and hypothesis testing.
 
@@ -78,7 +78,7 @@ cd gdelt-analysis
 
 ```bash
 pip install -r requirements.txt
-```g
+```
 
 ### 3. Run the Analysis Notebook
 
